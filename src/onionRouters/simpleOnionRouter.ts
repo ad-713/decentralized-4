@@ -1,43 +1,80 @@
 import bodyParser from "body-parser";
 import express from "express";
 import { BASE_ONION_ROUTER_PORT } from "../config";
+import crypto from "crypto";
+import http from "http";  // Import built-in HTTP module
 
 export async function simpleOnionRouter(nodeId: number) {
   const onionRouter = express();
   onionRouter.use(express.json());
   onionRouter.use(bodyParser.json());
 
-  let lastReceivedEncryptedMessage: string | null = null;
-  let lastReceivedDecryptedMessage: string | null = null;
-  let lastMessageDestination: number | null = null;
-
+  // /status route
   onionRouter.get("/status", (req, res) => {
     res.send("live");
   });
 
-  // Route pour récupérer le dernier message chiffré reçu
+  // Generate a pair of keys
+  const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+
+  // Variables to keep track of received messages and destinations
+  let lastReceivedEncryptedMessage: string | null = null;
+  let lastReceivedDecryptedMessage: string | null = null;
+  let lastMessageDestination: number | null = null;
+
+  // /getLastReceivedEncryptedMessage route
   onionRouter.get("/getLastReceivedEncryptedMessage", (req, res) => {
     res.json({ result: lastReceivedEncryptedMessage });
   });
 
-  // Route pour récupérer le dernier message déchiffré reçu
+  // /getLastReceivedDecryptedMessage route
   onionRouter.get("/getLastReceivedDecryptedMessage", (req, res) => {
     res.json({ result: lastReceivedDecryptedMessage });
   });
 
-  // Route pour récupérer la destination du dernier message
+  // /getLastMessageDestination route
   onionRouter.get("/getLastMessageDestination", (req, res) => {
     res.json({ result: lastMessageDestination });
   });
 
-  // Exemple de réception d'un message (juste pour démonstration)
-  onionRouter.post("/receiveMessage", (req, res) => {
-    const { encryptedMessage, decryptedMessage, destination } = req.body;
-    lastReceivedEncryptedMessage = encryptedMessage;
-    lastReceivedDecryptedMessage = decryptedMessage;
-    lastMessageDestination = destination;
-    res.send("Message received");
+  // /getPrivateKey route
+  onionRouter.get("/getPrivateKey", (req, res) => {
+    const privateKeyBase64 = privateKey.export({ type: "pkcs1", format: "pem" }).toString("base64");
+    res.json({ result: privateKeyBase64 });
   });
+
+  // Register node with the registry (without using axios)
+  const registryHost = "localhost";  // Update with the correct registry host if needed
+  const registryPort = 8080;  // Assuming the registry is running on port 8080
+  const registerData = JSON.stringify({
+    nodeId,
+    pubKey: publicKey.export({ type: "spki", format: "pem" }).toString("base64"),
+  });
+
+  const options = {
+    hostname: registryHost,
+    port: registryPort,
+    path: "/registerNode",
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Content-Length": Buffer.byteLength(registerData),
+    },
+  };
+
+  const request = http.request(options, (response) => {
+    console.log("Node registered on the registry");
+    // You can also handle the response here if needed
+  });
+
+  request.on("error", (error) => {
+    console.error("Error registering node:", error);
+  });
+
+  request.write(registerData);
+  request.end();
 
   const server = onionRouter.listen(BASE_ONION_ROUTER_PORT + nodeId, () => {
     console.log(
