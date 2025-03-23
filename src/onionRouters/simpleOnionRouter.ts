@@ -17,6 +17,14 @@ export async function simpleOnionRouter(nodeId: number) {
   // Generate a pair of keys
   const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", {
     modulusLength: 2048,
+    publicKeyEncoding: {
+      type: "spki",
+      format: "der"
+    },
+    privateKeyEncoding: {
+      type: "pkcs8",
+      format: "der"
+    }
   });
 
   // Variables to keep track of received messages and destinations
@@ -41,17 +49,20 @@ export async function simpleOnionRouter(nodeId: number) {
 
   // /getPrivateKey route
   onionRouter.get("/getPrivateKey", (req, res) => {
-    const privateKeyBase64 = privateKey.export({ type: "pkcs1", format: "pem" }).toString("base64");
     res.json({ result: privateKeyBase64 });
   });
 
-  // Register node with the registry (without using axios)
-  const registryHost = "localhost";  // Update with the correct registry host if needed
-  const registryPort = 8080;  // Assuming the registry is running on port 8080
+  const publicKeyBase64 = Buffer.from(publicKey).toString("base64");
+  const privateKeyBase64 = Buffer.from(privateKey).toString("base64");
+
+  // Register node with the registry
   const registerData = JSON.stringify({
     nodeId,
-    pubKey: publicKey.export({ type: "spki", format: "pem" }).toString("base64"),
+    pubKey: publicKeyBase64,
   });
+
+  const registryHost = "localhost";  // Assuming registry is running on localhost
+  const registryPort = 8080; 
 
   const options = {
     hostname: registryHost,
